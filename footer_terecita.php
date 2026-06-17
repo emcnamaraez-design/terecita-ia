@@ -74,9 +74,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 </div>
 
 <script>
+var TERECITA_URL = 'https://web-production-8bded.up.railway.app/chat';
+var TERECITA_API_BASE = TERECITA_URL.replace(/\/chat$/, '');
+
 var historial = JSON.parse(localStorage.getItem('terecita_historial') || '[]');
 var iniciado = localStorage.getItem('terecita_iniciado') === 'true';
 var esperando = false;
+var productosPendientes = [];   // Productos capturados de los bloques RESUMEN_COMPRA
 
 window.addEventListener('load', function(){
   if(historial.length > 0){
@@ -131,7 +135,7 @@ function llamarTerecita(mensajeInicial){
     mensajes = [{role:'user', content: mensajeInicial}];
   }
   agregarMensaje('...', 'terecita', 'typing');
-  fetch('https://web-production-8bded.up.railway.app/chat',{
+  fetch(TERECITA_URL,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({messages: mensajes})
@@ -168,35 +172,123 @@ function procesarTexto(texto) {
     + '</div>'
   );
 
-  // Resumen de compra
-  if(texto.indexOf('RESUMEN_COMPRA') !== -1 && texto.indexOf('FIN_RESUMEN') !== -1){
-    var ini = texto.indexOf('RESUMEN_COMPRA');
-    var fin = texto.indexOf('FIN_RESUMEN') + 'FIN_RESUMEN'.length;
-    var bloque = texto.substring(ini, fin);
-    var lineas = bloque.replace('RESUMEN_COMPRA','').replace('FIN_RESUMEN','').trim().split('\n');
+  // Resumen de compra: Terecita puede mandar uno o varios bloques
+  // RESUMEN_COMPRA...FIN_RESUMEN (uno por producto). Cada bloque se
+  // convierte en su tarjeta visual Y se guarda en productosPendientes
+  // para poder llamar a /enviar-cotizacion mas adelante.
+  texto = texto.replace(/RESUMEN_COMPRA([\s\S]*?)FIN_RESUMEN/g, function(match, contenido){
+    var lineas = contenido.trim().split('\n');
+    var item = {};
     var cuadro = '<div style="background:#1a1a2e;color:white;border-radius:12px;padding:15px;margin:8px 0;font-size:12px;width:100%;">';
     cuadro += '<div style="font-size:14px;font-weight:bold;border-bottom:1px solid rgba(255,255,255,0.3);padding-bottom:8px;margin-bottom:10px;">📋 Resumen de tu pedido</div>';
     lineas.forEach(function(linea){
-      if(linea.trim()){
-        var idx = linea.indexOf(':');
-        if(idx !== -1){
-          var clave = linea.substring(0,idx).trim();
-          var valor = linea.substring(idx+1).trim();
-          var esTotal = clave.toLowerCase().indexOf('total') !== -1;
-          cuadro += '<div style="display:flex;justify-content:space-between;padding:3px 0;'+(esTotal?'border-top:1px solid rgba(255,255,255,0.3);margin-top:6px;padding-top:8px;':'')+ '">';
-          cuadro += '<span style="color:rgba(255,255,255,0.7);">'+clave+'</span>';
-          cuadro += '<span style="font-weight:'+(esTotal?'bold':'normal')+';color:'+(esTotal?'#4CAF50':'white')+';">'+valor+'</span>';
-          cuadro += '</div>';
-        }
-      }
+      linea = linea.trim();
+      if(!linea) return;
+      var idx = linea.indexOf(':');
+      if(idx === -1) return;
+      var clave = linea.substring(0,idx).trim();
+      var valor = linea.substring(idx+1).trim();
+      var esTotal = clave.toLowerCase().indexOf('total') !== -1;
+      cuadro += '<div style="display:flex;justify-content:space-between;padding:3px 0;'+(esTotal?'border-top:1px solid rgba(255,255,255,0.3);margin-top:6px;padding-top:8px;':'')+ '">';
+      cuadro += '<span style="color:rgba(255,255,255,0.7);">'+clave+'</span>';
+      cuadro += '<span style="font-weight:'+(esTotal?'bold':'normal')+';color:'+(esTotal?'#4CAF50':'white')+';">'+valor+'</span>';
+      cuadro += '</div>';
+
+      var claveNorm = clave.toLowerCase();
+      if(claveNorm === 'producto') item.nombre = valor;
+      else if(claveNorm === 'talla') item.talla = valor;
+      else if(claveNorm === 'color') item.color = valor;
+      else if(claveNorm === 'cantidad') item.cantidad = parseInt(valor, 10) || 1;
+      else if(claveNorm === 'precio unitario') item.precio_unitario = parseInt(valor.replace(/[^\d]/g, ''), 10) || 0;
+      else if(claveNorm === 'descuento') item.descuento = valor;
+      else if(claveNorm === 'total estimado') item.total = valor;
     });
     cuadro += '</div>';
-    texto = texto.replace(bloque, cuadro);
-  }
+    if(item.nombre) productosPendientes.push(item);
+    return cuadro;
+  });
 
   // Saltos de linea
   texto = texto.replace(/\n/g, '<br>');
   return texto;
+}
+
+// ── Formulario de datos del cliente para enviar la cotizacion ─────────────
+function mostrarFormularioCotizacion(){
+  if(document.getElementById('terecita-form-cotizacion')) return;
+  var div = document.getElementById('terecita-mensajes');
+  var form = document.createElement('div');
+  form.id = 'terecita-form-cotizacion';
+  form.style.cssText = 'background:white;border:1px solid #e0e0e0;border-radius:10px;padding:12px;margin:6px 0;font-size:12px;';
+  form.innerHTML =
+    '<div style="font-weight:bold;margin-bottom:8px;color:#1a1a2e;">📩 Completa tus datos para recibir la cotización</div>' +
+    '<input id="tc-nombre" placeholder="Nombre" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-email" placeholder="Email" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-telefono" placeholder="Teléfono" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-empresa" placeholder="Empresa" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-ciudad" placeholder="Ciudad" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<select id="tc-documento" style="width:100%;margin-bottom:8px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+      '<option value="Boleta">Boleta</option>' +
+      '<option value="Factura">Factura</option>' +
+    '</select>' +
+    '<button id="tc-enviar-btn" style="width:100%;background:#1a1a2e;color:white;border:none;border-radius:20px;padding:9px;cursor:pointer;font-size:13px;">Enviar cotización por correo</button>' +
+    '<div id="tc-status" style="margin-top:6px;font-size:11px;color:#888;"></div>';
+  div.appendChild(form);
+  div.scrollTop = div.scrollHeight;
+
+  document.getElementById('tc-enviar-btn').onclick = enviarCotizacionApi;
+}
+
+function enviarCotizacionApi(){
+  var btn = document.getElementById('tc-enviar-btn');
+  var status = document.getElementById('tc-status');
+  var nombre = document.getElementById('tc-nombre').value.trim();
+  var email = document.getElementById('tc-email').value.trim();
+
+  if(!nombre || !email){
+    status.textContent = 'Por favor completa al menos nombre y email.';
+    status.style.color = '#e63946';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  status.textContent = '';
+
+  fetch(TERECITA_API_BASE + '/enviar-cotizacion', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      nombre: nombre,
+      email: email,
+      telefono: document.getElementById('tc-telefono').value.trim(),
+      empresa: document.getElementById('tc-empresa').value.trim(),
+      ciudad: document.getElementById('tc-ciudad').value.trim(),
+      documento: document.getElementById('tc-documento').value,
+      productos: productosPendientes,
+      resumen: JSON.stringify(productosPendientes)
+    })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.ok){
+      status.textContent = '✅ Cotización ' + (d.numero || '') + ' enviada a tu correo.';
+      status.style.color = '#16a34a';
+      btn.textContent = 'Enviada ✓';
+      productosPendientes = [];
+    } else {
+      status.textContent = 'Error: ' + (d.error || 'no se pudo enviar');
+      status.style.color = '#e63946';
+      btn.disabled = false;
+      btn.textContent = 'Reintentar';
+    }
+  })
+  .catch(function(){
+    status.textContent = 'Error de conexión, intenta de nuevo.';
+    status.style.color = '#e63946';
+    btn.disabled = false;
+    btn.textContent = 'Reintentar';
+  });
 }
 
 function agregarMensaje(texto, quien, id){
@@ -211,6 +303,10 @@ function agregarMensaje(texto, quien, id){
   burbuja.innerHTML = '<span style="background:'+(quien==='user'?'#1a1a2e':'white')+';color:'+(quien==='user'?'white':'#333')+';padding:8px 12px;border-radius:15px;display:inline-block;max-width:92%;font-size:13px;word-wrap:break-word;line-height:1.5;text-align:left;">'+contenido+'</span>';
   div.appendChild(burbuja);
   div.scrollTop = div.scrollHeight;
+
+  if(quien === 'terecita' && productosPendientes.length > 0){
+    mostrarFormularioCotizacion();
+  }
 }
 
 function quitarTyping(){

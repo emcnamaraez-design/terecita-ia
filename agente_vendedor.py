@@ -26,41 +26,97 @@ CATALOGO_FILE = os.path.join(BASE_DIR, "catalogo.csv")
 
 
 # ── CARGA DEL CATÁLOGO ─────────────────────────────────────────────────────
+def _limpiar_precio(valor):
+    """Convierte '33590.0' o '$33.590' en el entero 33590. Devuelve None si no es numerico."""
+    if not valor:
+        return None
+    texto = str(valor).strip().replace('$', '').replace(' ', '')
+    # Si tiene un solo punto seguido de 1-2 decimales, es decimal (33590.0); si no, separador de miles.
+    if texto.count('.') == 1 and len(texto.split('.')[-1]) <= 2:
+        texto = texto.split('.')[0]
+    texto = texto.replace('.', '').replace(',', '')
+    try:
+        return int(texto)
+    except ValueError:
+        return None
+
+
 def cargar_catalogo():
     """
     Lee el catalogo.csv y lo convierte en texto para incluirlo en el prompt.
-    Solo incluye los campos que Terecita necesita para recomendar productos.
+
+    El export de WooCommerce no trae el precio en la fila del producto padre
+    (Tipo=variable) — el precio real vive en las filas hijas (Tipo=variation),
+    una por cada combinacion de talla/color, vinculadas al padre por la columna
+    "Principal" (o "Superior" en exports mas antiguos). Por eso agrupamos las
+    variaciones por SKU padre para sacar el precio, las tallas y los colores
+    reales de cada producto, en vez de leerlos directo de la fila 'variable'.
     """
-    productos = []
-
     with open(CATALOGO_FILE, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)    # Lee el CSV como diccionario (columna: valor)
-        for fila in reader:
-            # Solo procesar filas de tipo 'variable' (productos padre, no variaciones)
-            tipo = fila.get('Tipo', '').strip().lower()
-            if tipo not in ['variable', 'simple']:
-                continue
+        filas = list(csv.DictReader(f))
 
-            # Extraer los campos relevantes
-            sku     = fila.get('SKU', '').strip()
-            nombre  = fila.get('Nombre', '').strip()
-            precio  = fila.get('Precio normal', '').strip()
-            categ   = fila.get('Categorías', '').strip()
-            tallas  = fila.get('Valor(es) del atributo 1', '').strip()
-            colores = fila.get('Valor(es) del atributo 2', '').strip()
+    # 1) Info de cada producto padre (nombre, categoria, imagen)
+    padres = {}
+    for fila in filas:
+        if fila.get('Tipo', '').strip().lower() != 'variable':
+            continue
+        sku = fila.get('SKU', '').strip()
+        if not sku:
+            continue
+        imagenes = fila.get('Imágenes', '').strip()
+        primera_imagen = imagenes.split(',')[0].strip() if imagenes else ''
+        padres[sku] = {
+            'nombre': fila.get('Nombre', '').strip(),
+            'categoria': fila.get('Categorías', '').strip(),
+            'imagen': primera_imagen,
+        }
 
-            # Ignorar filas sin SKU o nombre
-            if not sku or not nombre:
-                continue
+    # 2) Agrupar las variaciones (precio, tallas, colores) por SKU del padre
+    grupos = {}
+    for fila in filas:
+        if fila.get('Tipo', '').strip().lower() != 'variation':
+            continue
+        sku_padre = (fila.get('Principal') or fila.get('Superior') or '').strip()
+        if not sku_padre or sku_padre not in padres:
+            continue
 
-            # Formatear la línea del producto para el prompt
-            linea = f"SKU:{sku} | {nombre} | ${precio} CLP | Cat:{categ}"
-            if tallas:
-                linea += f" | Tallas:{tallas}"
-            if colores:
-                linea += f" | Colores:{colores}"
+        grupo = grupos.setdefault(sku_padre, {'precios': [], 'tallas': set(), 'colores': set()})
 
-            productos.append(linea)
+        precio = _limpiar_precio(fila.get('Precio normal', ''))
+        if precio is not None:
+            grupo['precios'].append(precio)
+
+        talla = fila.get('Valor(es) del atributo 1', '').strip()
+        if talla:
+            grupo['tallas'].add(talla)
+
+        color = fila.get('Valor(es) del atributo 2', '').strip()
+        if color:
+            grupo['colores'].add(color)
+
+    # 3) Construir una linea de catalogo por cada producto que tenga al menos un precio real
+    productos = []
+    for sku_padre, grupo in grupos.items():
+        if not grupo['precios']:
+            continue
+        info = padres[sku_padre]
+        if not info['nombre']:
+            continue
+
+        precio_min = min(grupo['precios'])
+        precio_max = max(grupo['precios'])
+        precio_txt = f"{precio_min:,}".replace(',', '.') if precio_min == precio_max \
+            else f"{precio_min:,}".replace(',', '.') + " - $" + f"{precio_max:,}".replace(',', '.')
+
+        linea = f"SKU:{sku_padre} | {info['nombre']} | ${precio_txt} CLP | Cat:{info['categoria']}"
+        if grupo['tallas']:
+            linea += f" | Tallas:{', '.join(sorted(grupo['tallas']))}"
+        if grupo['colores']:
+            linea += f" | Colores:{', '.join(sorted(grupo['colores']))}"
+        if info['imagen']:
+            linea += f" | Img:{info['imagen']}"
+
+        productos.append(linea)
 
     # Unir todos los productos en un texto grande
     return "\n".join(productos)
@@ -123,13 +179,19 @@ Paso 6 - Productos complementarios:
 Sugiere 1 o 2 productos que combinen bien con lo seleccionado.
 
 Paso 7 - Resumen visual:
-Muestra un resumen con el bloque:
+Muestra un resumen por cada producto elegido con EXACTAMENTE este formato,
+sin asteriscos, sin markdown, respetando los saltos de linea (el widget
+depende de este formato exacto para armar la cotizacion):
 
-RESUMEN_COMPRA:
-Cliente: [nombre]
-Productos: [lista con SKU, talla, color, cantidad, precio unitario]
-Total estimado: $[total] CLP
-[descuento si aplica]
+RESUMEN_COMPRA
+Producto: [nombre]
+Talla: [talla]
+Color: [color]
+Cantidad: [cantidad]
+Precio unitario: $[precio]
+Descuento: [porcentaje, o "Sin descuento" si no aplica]
+Total estimado: $[total]
+FIN_RESUMEN
 
 Paso 8 - Datos para cotizacion:
 Pide los siguientes datos en un solo mensaje:
