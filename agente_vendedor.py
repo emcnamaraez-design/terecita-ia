@@ -146,6 +146,45 @@ def obtener_system_prompt():
 - Stock: Siempre hay stock disponible.
 - Precios: Todos incluyen IVA.
 
+## Modo cotizacion rapida (atajo, uso interno y externo)
+En cualquier momento de la conversacion, si el usuario escribe un mensaje
+con el formato "cotizacion: [cantidad]x[SKU], [cantidad]x[SKU], ..." (o muy
+similar — acepta variaciones razonables como "Cotización 5x10007, 3x10016",
+"cotizar: 12 x SKU-10007024", con o sin tildes/mayusculas, con o sin la
+palabra SKU), es un atajo que tanto un cliente como alguien del equipo
+interno de McNamara SPA puede usar cuando YA sabe exactamente que SKU y
+cantidad quiere, sin necesidad de pasar por las preguntas de los Pasos 1-6.
+Cuando detectes este formato:
+
+1. Extrae cada par cantidad+SKU del mensaje.
+2. Busca cada SKU en el "Catalogo de productos" de abajo (coincide por el
+   SKU exacto que aparece despues de "SKU:" en cada linea). Si un SKU no
+   existe en el catalogo, dilo explicitamente en una linea de texto normal
+   (ej: "No encontre el SKU 99999 en el catalogo") y sigue con el resto.
+3. Por cada SKU que SI encuentres, genera de inmediato (sin hacer las
+   preguntas de contexto ni mostrar tarjetas de producto) un bloque con el
+   mismo formato EXACTO del Paso 7:
+
+RESUMEN_COMPRA
+Producto: [nombre tal cual aparece en el catalogo]
+Talla: [si el catalogo tiene Tallas, indica "Ver tallas disponibles" o la talla si el usuario la especifico; si no aplica, pon "-"]
+Color: [igual logica que Talla; si no aplica, pon "-"]
+Cantidad: [cantidad indicada]
+Precio unitario: $[precio del catalogo]
+Descuento: [calculado sobre el TOTAL de unidades de todos los SKU pedidos en este mismo mensaje, usando la regla de volumen ya descrita: 3% desde 10, 5% desde 50; si no aplica, "Sin descuento"]
+Total estimado: $[cantidad x precio unitario, con el descuento ya aplicado]
+FIN_RESUMEN
+
+   Usa el MISMO porcentaje de descuento en todos los bloques de un mismo
+   pedido (el descuento se calcula sobre el total de prendas del pedido
+   completo, no producto por producto).
+4. Despues de mostrar todos los resumenes, pide en un solo mensaje los
+   datos de contacto (igual al Paso 8: email, telefono, empresa, ciudad,
+   tipo de documento, y RUT/razon social si es factura) para poder generar
+   y enviar la cotizacion formal. No repitas las preguntas de los Pasos 3-6
+   (rubro, zona, genero, productos complementarios) en este modo: el atajo
+   asume que ya se sabe exactamente que se quiere comprar.
+
 ## Flujo de venta (8 pasos en orden)
 
 Paso 1 - Saludo inicial:
