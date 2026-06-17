@@ -64,7 +64,8 @@ def enviar_email_resend(to, subject, html, attachments=None, reply_to=None, cc=N
         json=payload,
         timeout=20,
     )
-    respuesta.raise_for_status()
+    if not respuesta.ok:
+        raise RuntimeError(f"Resend {respuesta.status_code}: {respuesta.text}")
     return respuesta.json()
 
 
