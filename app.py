@@ -34,7 +34,7 @@ RESEND_API_URL = "https://api.resend.com/emails"
 # mc-namaraspa.cl no esta verificado, asi que -igual que en McNamara AI-
 # enviamos desde el remitente por defecto de Resend y usamos reply_to para
 # que las respuestas lleguen al correo real de la empresa.
-RESEND_FROM = "McNamara AI <onboarding@resend.dev>"
+RESEND_FROM = "Terecita IA · McNamara SPA <onboarding@resend.dev>"
 
 
 def enviar_email_resend(to, subject, html, attachments=None, reply_to=None, cc=None):

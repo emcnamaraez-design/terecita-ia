@@ -12,7 +12,7 @@ from reportlab.lib import colors                     # Colores para el diseño
 from reportlab.lib.units import cm                   # Centímetros para medidas
 from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle,
-    Paragraph, Spacer, HRFlowable
+    Paragraph, Spacer, HRFlowable, Image
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -117,23 +117,32 @@ def generar_pdf_cotizacion(datos_cliente, productos):
     elementos = []
 
     # ── HEADER ────────────────────────────────────────────────────────────
-    # Tabla del header: logo izquierda, datos empresa derecha
+    # Tabla del header: logo izquierda, datos empresa al centro, cotizacion a la derecha
     fecha_hoy = datetime.now().strftime('%d/%m/%Y')
 
-    datos_header = [
-        [
-            Paragraph("<b>McNamara SPA</b><br/>Distribuidora Tworld", ParagraphStyle(
-                'header_empresa', fontSize=14, fontName='Helvetica-Bold', textColor=colors.white
-            )),
-            Paragraph(
-                f"<b>COTIZACIÓN</b><br/>{numero_cot}<br/>Fecha: {fecha_hoy}",
-                ParagraphStyle('header_cot', fontSize=11, fontName='Helvetica-Bold',
-                               textColor=colors.white, alignment=TA_RIGHT)
-            )
-        ]
-    ]
+    logo_celda = ''
+    if os.path.exists(LOGO_FILE):
+        try:
+            logo_celda = Image(LOGO_FILE, width=1.6*cm, height=1.6*cm)
+        except Exception:
+            logo_celda = ''   # Si el logo esta corrupto o no se puede leer, seguimos sin el
 
-    tabla_header = Table(datos_header, colWidths=[10*cm, 7*cm])
+    empresa_parrafo = Paragraph("<b>McNamara SPA</b><br/>Distribuidora Tworld", ParagraphStyle(
+        'header_empresa', fontSize=14, fontName='Helvetica-Bold', textColor=colors.white
+    ))
+    cotizacion_parrafo = Paragraph(
+        f"<b>COTIZACIÓN</b><br/>{numero_cot}<br/>Fecha: {fecha_hoy}",
+        ParagraphStyle('header_cot', fontSize=11, fontName='Helvetica-Bold',
+                       textColor=colors.white, alignment=TA_RIGHT)
+    )
+
+    if logo_celda:
+        datos_header = [[logo_celda, empresa_parrafo, cotizacion_parrafo]]
+        tabla_header = Table(datos_header, colWidths=[2.2*cm, 7.8*cm, 7*cm])
+    else:
+        datos_header = [[empresa_parrafo, cotizacion_parrafo]]
+        tabla_header = Table(datos_header, colWidths=[10*cm, 7*cm])
+
     tabla_header.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), COLOR_OSCURO),
         ('PADDING', (0, 0), (-1, -1), 15),
