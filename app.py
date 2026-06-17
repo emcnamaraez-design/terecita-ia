@@ -40,21 +40,35 @@ def nombre_seguro(texto):
 @app.route('/chat', methods=['POST'])
 def chat():
     """
-    Recibe: { "mensaje": "texto del cliente", "historial": [...] }
-    Devuelve: { "respuesta": "texto de Terecita" }
+    Acepta dos formatos de body (compatibilidad con distintos widgets):
+    1. { "mensaje": "texto del cliente", "historial": [...] }
+    2. { "messages": [{"role": "user"|"assistant", "content": "..."}, ...] }
+    Devuelve: { "respuesta": "texto de Terecita", "reply": "texto de Terecita" }
     """
     try:
-        datos = request.get_json()                  # Lee el JSON que manda el widget
-        mensaje = datos.get('mensaje', '')          # Extrae el mensaje del cliente
-        historial = datos.get('historial', [])      # Extrae el historial de conversación
+        datos = request.get_json() or {}
+
+        if 'messages' in datos:
+            mensajes_completos = datos.get('messages') or []
+            if not mensajes_completos:
+                return jsonify({'respuesta': 'Error: messages vacío', 'reply': 'Error: messages vacío'}), 400
+            ultimo = mensajes_completos[-1]
+            mensaje = ultimo.get('content', '')
+            historial = mensajes_completos[:-1]
+        else:
+            mensaje = datos.get('mensaje', '')          # Extrae el mensaje del cliente
+            historial = datos.get('historial', [])      # Extrae el historial de conversación
+
+        if not mensaje:
+            return jsonify({'respuesta': 'Error: mensaje vacío', 'reply': 'Error: mensaje vacío'}), 400
 
         # Llama al cerebro del agente para obtener la respuesta
         respuesta = obtener_respuesta(mensaje, historial)
 
-        return jsonify({'respuesta': respuesta})    # Devuelve la respuesta al widget
+        return jsonify({'respuesta': respuesta, 'reply': respuesta})    # Devuelve la respuesta al widget
 
     except Exception as e:
-        return jsonify({'respuesta': f'Error: {str(e)}'}), 500
+        return jsonify({'respuesta': f'Error: {str(e)}', 'reply': f'Error: {str(e)}'}), 500
 
 
 # ── RUTA DE EMAIL: envía cotización con PDF ────────────────────────────────
