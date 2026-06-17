@@ -175,18 +175,18 @@ def enviar_cotizacion():
         {f'<pre style="white-space:pre-wrap;font-family:inherit;">{resumen}</pre>' if resumen else ''}
         """
 
-        # El cliente es el destinatario principal (su cotizacion), la empresa
-        # va en copia para su registro. Ademas, mientras la cuenta de Resend
-        # no tenga un dominio verificado (modo sandbox), Resend solo permite
-        # enviar al correo del propio dueño de la cuenta como "to" — poner
-        # aqui al cliente es lo correcto en ambos sentidos.
+        # El cliente es el destinatario principal de su cotizacion. Mientras
+        # la cuenta de Resend no tenga un dominio verificado (modo sandbox),
+        # Resend exige que TODOS los destinatarios (to y cc) sean el correo
+        # del propio dueño de la cuenta — por eso no se puede usar "cc" para
+        # avisar a la empresa todavia. Una vez verificado un dominio en
+        # resend.com/domains, se puede volver a agregar cc=EMAIL_DESTINO.
         enviar_email_resend(
             to=email_cliente or EMAIL_DESTINO,
             subject=f"Cotización {numero_cot} - Terecita IA - McNamara SPA - {nombre_cliente}",
             html=cuerpo_html,
             attachments=[{'filename': nombre_archivo, 'content': pdf_base64}],
             reply_to=EMAIL_DESTINO,
-            cc=EMAIL_DESTINO if email_cliente else None,
         )
 
         # Registrar en log
