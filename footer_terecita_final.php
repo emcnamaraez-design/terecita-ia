@@ -279,6 +279,7 @@ const CARMEN_URL = 'https://web-production-8bded.up.railway.app/chat';
 let historial = [];         // Historial de la conversación para la API
 let chatAbierto = false;    // Si el chat está visible o no
 let primerMensaje = true;   // Para saber si es el inicio de la conversación
+let productosResumen = [];  // Acumula productos del RESUMEN_COMPRA para enviar en cotizacion
 
 // ── Abrir/cerrar el chat ──────────────────────────────────────────────────
 function toggleChat() {
@@ -318,6 +319,7 @@ function cargarHistorialLocal() {
 // ── Limpiar conversación ──────────────────────────────────────────────────
 function limpiarConversacion() {
   historial = [];
+  productosResumen = [];
   localStorage.removeItem('terecita_historial');
   document.getElementById('carmen-mensajes').innerHTML = '';
   primerMensaje = true;
@@ -376,36 +378,113 @@ async function enviarMensaje(textoForzado) {
 function procesarRespuesta(texto) {
   const mensajes = document.getElementById('carmen-mensajes');
 
-  // Detectar bloques de producto con el formato:
-  // PRODUCTO: ... \n PRECIO: ... \n TALLAS: ... \n COLORES: ... \n IMG: ... \n ---
-  const bloques = texto.split('---');
+  // 1. Detectar DATOS_CLIENTE (dispara envio de cotizacion)
+  const matchDatos = texto.match(/DATOS_CLIENTE\n([\s\S]*?)FIN_DATOS_CLIENTE/);
+  if (matchDatos) {
+    const bloqueDatos = matchDatos[1];
+    const extraer = (campo) => {
+      const m = bloqueDatos.match(new RegExp(campo + ':\\s*(.+)'));
+      return m ? m[1].trim() : '';
+    };
+    const datosCliente = {
+      nombre:       extraer('Nombre'),
+      email:        extraer('Email'),
+      telefono:     extraer('Telefono'),
+      empresa:      extraer('Empresa'),
+      ciudad:       extraer('Ciudad'),
+      documento:    extraer('Documento'),
+      rut:          extraer('RUT'),
+      razon_social: extraer('RazonSocial'),
+      productos:    productosResumen,
+    };
+    texto = texto.replace(/DATOS_CLIENTE[\s\S]*?FIN_DATOS_CLIENTE/, '').trim();
+    fetch(CARMEN_URL.replace('/chat', '/enviar-cotizacion'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datosCliente)
+    }).then(r => r.json()).then(res => {
+      if (res.ok) {
+        const div = document.createElement('div');
+        div.className = 'carmen-msg-agente';
+        div.innerHTML = '<span>✅ Cotización enviada. Revisa tu correo en unos minutos.</span>';
+        mensajes.appendChild(div);
+      }
+    }).catch(() => {});
+    productosResumen = [];
+  }
 
+  // 2. Detectar bloques RESUMEN_COMPRA (fondo oscuro)
+  const regexResumen = /RESUMEN_COMPRA\n([\s\S]*?)FIN_RESUMEN/g;
+  let matchResumen;
+  const partesResumen = [];
+  while ((matchResumen = regexResumen.exec(texto)) !== null) {
+    const bloqueR = matchResumen[1];
+    const exR = (campo) => {
+      const m = bloqueR.match(new RegExp(campo + ':\\s*(.+)'));
+      return m ? m[1].trim() : '';
+    };
+    productosResumen.push({
+      nombre:          exR('Producto'),
+      talla:           exR('Talla'),
+      color:           exR('Color'),
+      cantidad:        exR('Cantidad'),
+      precio_unitario: exR('Precio unitario').replace(/[$\.]/g,'').replace('CLP','').trim(),
+    });
+    partesResumen.push({
+      inicio: matchResumen.index,
+      fin: matchResumen.index + matchResumen[0].length,
+      precioU: exR('Precio unitario'),
+      totalE: exR('Total estimado'),
+      nombre: exR('Producto'),
+      talla: exR('Talla'),
+      color: exR('Color'),
+      cantidad: exR('Cantidad'),
+      descuento: exR('Descuento'),
+    });
+  }
+  if (partesResumen.length > 0) {
+    const textoPre = texto.substring(0, partesResumen[0].inicio).trim();
+    if (textoPre) agregarBurbuja(textoPre, 'agente');
+    partesResumen.forEach(p => {
+      const card = document.createElement('div');
+      card.innerHTML = `
+        <div style="background:#1a1a2e;color:#e0e0e0;border-radius:10px;padding:12px 14px;margin:6px 0;font-size:13px;line-height:1.8;border:1px solid #2563eb;">
+          <div style="font-weight:bold;color:#60a5fa;margin-bottom:6px;">🛍️ ${p.nombre}</div>
+          <div>📏 Talla: ${p.talla}</div>
+          <div>🎨 Color: ${p.color}</div>
+          <div>📦 Cantidad: ${p.cantidad}</div>
+          <div>💰 Precio unitario: ${p.precioU}</div>
+          <div>🏷️ Descuento: ${p.descuento}</div>
+          <div style="font-weight:bold;color:#34d399;">💵 Total estimado: ${p.totalE}</div>
+        </div>`;
+      mensajes.appendChild(card);
+    });
+    const textoPost = texto.substring(partesResumen[partesResumen.length-1].fin).trim();
+    if (textoPost) agregarBurbuja(textoPost, 'agente');
+    mensajes.scrollTop = mensajes.scrollHeight;
+    return;
+  }
+
+  // 3. Detectar bloques PRODUCTO formato Carmen (separados por ---)
+  const bloques = texto.split('---');
   bloques.forEach(bloque => {
     bloque = bloque.trim();
     if (!bloque) return;
-
     const tieneProducto = bloque.includes('PRODUCTO:') && bloque.includes('PRECIO:');
-
     if (tieneProducto) {
-      // Extraer datos del producto
       const nombre  = (bloque.match(/PRODUCTO:\s*(.+)/)  || ['',''])[1].trim();
       const precio  = (bloque.match(/PRECIO:\s*(.+)/)    || ['',''])[1].trim();
       const tallas  = (bloque.match(/TALLAS:\s*(.+)/)    || ['',''])[1].trim();
       const colores = (bloque.match(/COLORES:\s*(.+)/)   || ['',''])[1].trim();
       const img     = (bloque.match(/IMG:\s*(.+)/)       || ['',''])[1].trim();
-
-      // Generar URL del producto desde el nombre (slug)
       const slug = nombre.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quitar tildes
-        .replace(/[^a-z0-9\s-]/g, '')                      // quitar caracteres especiales
-        .replace(/\s+/g, '-');                              // espacios a guiones
-
-      const url = `https://workcorporativo.cl/producto/${slug}`;
-
-      // Crear tarjeta de producto
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+      const url = `https://mc-namaraspa.cl/producto/${slug}`;
       const card = document.createElement('div');
       card.className = 'carmen-producto-card';
       card.innerHTML = `
+        ${(img && img !== 'Sin imagen') ? `<img src="${img}" alt="${nombre}" style="width:100%;border-radius:8px;margin-bottom:8px;object-fit:cover;max-height:160px;">` : ''}
         <strong>👕 ${nombre}</strong>
         <span class="precio">${precio}</span><br>
         ${tallas ? `<small>📏 Tallas: ${tallas}</small><br>` : ''}
@@ -413,14 +492,10 @@ function procesarRespuesta(texto) {
         <a href="${url}" target="_blank">🔗 Ver prenda</a>
       `;
       mensajes.appendChild(card);
-
     } else if (bloque.length > 0) {
-      // Texto normal (no es tarjeta de producto)
       agregarBurbuja(bloque, 'agente');
     }
   });
-
-  // Hacer scroll al final
   mensajes.scrollTop = mensajes.scrollHeight;
 }
 
