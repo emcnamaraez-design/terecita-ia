@@ -162,15 +162,41 @@ function llamarTerecita(mensajeInicial){
 
 function procesarTexto(texto) {
 
-  // Detectar: 👕 Nombre - $precio CLP + 🔗 Ver prenda: URL
-  texto = texto.replace(
-    /👕 (.+?) - (\$[\d\.,]+ CLP)\s*\n🔗 Ver prenda: (https?:\/\/[^\s\n<]+)/g,
-    '<div style="background:white;border:1px solid #e0e0e0;border-radius:12px;padding:12px;margin:6px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
-    + '<div style="font-weight:bold;font-size:13px;color:#1a1a2e;margin-bottom:4px;">👕 $1</div>'
-    + '<div style="color:#e53935;font-weight:bold;font-size:14px;margin-bottom:8px;">$2</div>'
-    + '<a href="$3" target="_blank" style="display:block;text-align:center;background:#1a1a2e;color:white;padding:7px;border-radius:20px;font-size:12px;text-decoration:none;">Ver prenda en tienda →</a>'
-    + '</div>'
-  );
+  // Tarjeta visual de producto: bloque PRODUCTO_VISUAL...FIN_PRODUCTO_VISUAL
+  // con Nombre/Precio/Imagen/Link. Se muestra como miniatura clicable +
+  // boton "Ver producto completo ->" — la URL nunca se ve como texto plano.
+  texto = texto.replace(/PRODUCTO_VISUAL([\s\S]*?)FIN_PRODUCTO_VISUAL/g, function(match, contenido){
+    var lineas = contenido.trim().split('\n');
+    var datos = {};
+    lineas.forEach(function(linea){
+      linea = linea.trim();
+      if(!linea) return;
+      var idx = linea.indexOf(':');
+      if(idx === -1) return;
+      var clave = linea.substring(0,idx).trim().toLowerCase();
+      var valor = linea.substring(idx+1).trim();
+      datos[clave] = valor;
+    });
+
+    var nombre = datos['nombre'] || '';
+    var precio = datos['precio'] || '';
+    var imagen = datos['imagen'] || '';
+    var link = datos['link'] || '#';
+    var tieneImagen = imagen && imagen.toLowerCase() !== 'sin imagen';
+
+    var html = '<div style="background:white;border:1px solid #e0e0e0;border-radius:12px;overflow:hidden;margin:6px 0;box-shadow:0 2px 8px rgba(0,0,0,0.08);">';
+    if(tieneImagen){
+      html += '<a href="'+link+'" target="_blank">'
+        + '<img src="'+imagen+'" alt="" style="width:100%;max-height:160px;object-fit:cover;display:block;cursor:pointer;">'
+        + '</a>';
+    }
+    html += '<div style="padding:10px 12px;">';
+    html += '<div style="font-weight:bold;font-size:13px;color:#1a1a2e;margin-bottom:4px;">👕 '+nombre+'</div>';
+    html += '<div style="color:#e53935;font-weight:bold;font-size:14px;margin-bottom:8px;">'+precio+'</div>';
+    html += '<a href="'+link+'" target="_blank" style="display:block;text-align:center;background:#1a1a2e;color:white;padding:7px;border-radius:20px;font-size:12px;text-decoration:none;">Ver producto completo →</a>';
+    html += '</div></div>';
+    return html;
+  });
 
   // Resumen de compra: Terecita puede mandar uno o varios bloques
   // RESUMEN_COMPRA...FIN_RESUMEN (uno por producto). Cada bloque se
