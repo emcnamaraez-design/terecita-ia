@@ -80,7 +80,12 @@ var TERECITA_API_BASE = TERECITA_URL.replace(/\/chat$/, '');
 var historial = JSON.parse(localStorage.getItem('terecita_historial') || '[]');
 var iniciado = localStorage.getItem('terecita_iniciado') === 'true';
 var esperando = false;
-var productosPendientes = [];   // Productos capturados de los bloques RESUMEN_COMPRA
+var productosPendientes = [];     // Productos capturados de los bloques RESUMEN_COMPRA
+var datosClienteCapturados = null; // Datos capturados del bloque DATOS_CLIENTE (dispara el envio automatico)
+
+function escapeAttr(v){
+  return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
 
 window.addEventListener('load', function(){
   if(historial.length > 0){
@@ -165,7 +170,8 @@ function procesarTexto(texto) {
   // Tarjeta visual de producto: bloque PRODUCTO_VISUAL...FIN_PRODUCTO_VISUAL
   // con Nombre/Precio/Imagen/Link. Se muestra como miniatura clicable +
   // boton "Ver producto completo ->" — la URL nunca se ve como texto plano.
-  texto = texto.replace(/PRODUCTO_VISUAL([\s\S]*?)FIN_PRODUCTO_VISUAL/g, function(match, contenido){
+  // (flag "i" por si el modelo varia mayusculas/minusculas en los marcadores)
+  texto = texto.replace(/PRODUCTO_VISUAL([\s\S]*?)FIN_PRODUCTO_VISUAL/gi, function(match, contenido){
     var lineas = contenido.trim().split('\n');
     var datos = {};
     lineas.forEach(function(linea){
@@ -202,7 +208,7 @@ function procesarTexto(texto) {
   // RESUMEN_COMPRA...FIN_RESUMEN (uno por producto). Cada bloque se
   // convierte en su tarjeta visual Y se guarda en productosPendientes
   // para poder llamar a /enviar-cotizacion mas adelante.
-  texto = texto.replace(/RESUMEN_COMPRA([\s\S]*?)FIN_RESUMEN/g, function(match, contenido){
+  texto = texto.replace(/RESUMEN_COMPRA([\s\S]*?)FIN_RESUMEN/gi, function(match, contenido){
     var lineas = contenido.trim().split('\n');
     var item = {};
     var cuadro = '<div style="background:#1a1a2e;color:white;border-radius:12px;padding:15px;margin:8px 0;font-size:12px;width:100%;">';
@@ -234,28 +240,105 @@ function procesarTexto(texto) {
     return cuadro;
   });
 
+  // Datos del cliente: bloque DATOS_CLIENTE...FIN_DATOS_CLIENTE que Terecita
+  // manda cuando ya recolecto nombre/email/etc. conversacionalmente (Paso 9).
+  // Esto es lo que dispara el envio automatico de /enviar-cotizacion — no se
+  // muestra en el chat (Terecita ya confirma el envio en texto normal aparte).
+  texto = texto.replace(/DATOS_CLIENTE([\s\S]*?)FIN_DATOS_CLIENTE/gi, function(match, contenido){
+    var lineas = contenido.trim().split('\n');
+    var datos = {};
+    lineas.forEach(function(linea){
+      linea = linea.trim();
+      if(!linea) return;
+      var idx = linea.indexOf(':');
+      if(idx === -1) return;
+      var clave = linea.substring(0,idx).trim().toLowerCase();
+      var valor = linea.substring(idx+1).trim();
+      datos[clave] = valor;
+    });
+    datosClienteCapturados = {
+      nombre: datos['nombre'] || '',
+      email: datos['email'] || '',
+      telefono: datos['telefono'] || '',
+      empresa: datos['empresa'] || '',
+      ciudad: datos['ciudad'] || '',
+      documento: datos['documento'] || 'Boleta',
+      rut: (datos['rut'] && datos['rut'] !== '-') ? datos['rut'] : '',
+      razon_social: (datos['razonsocial'] && datos['razonsocial'] !== '-') ? datos['razonsocial'] : ''
+    };
+    return '';
+  });
+
   // Saltos de linea
   texto = texto.replace(/\n/g, '<br>');
   return texto;
 }
 
-// ── Formulario de datos del cliente para enviar la cotizacion ─────────────
-function mostrarFormularioCotizacion(){
+// ── Envio automatico: se dispara solo cuando llega un bloque DATOS_CLIENTE
+// con nombre y email validos (ver agregarMensaje). Sin formulario manual,
+// para no pedirle al cliente datos que ya le dio a Terecita en el chat.
+function enviarCotizacionAuto(dc){
+  agregarBurbujaSistema('Enviando tu cotización...');
+  fetch(TERECITA_API_BASE + '/enviar-cotizacion', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      nombre: dc.nombre,
+      email: dc.email,
+      telefono: dc.telefono,
+      empresa: dc.empresa,
+      ciudad: dc.ciudad,
+      documento: dc.documento,
+      rut: dc.rut,
+      razon_social: dc.razon_social,
+      productos: productosPendientes,
+      resumen: JSON.stringify(productosPendientes)
+    })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.ok){
+      agregarBurbujaSistema('✅ Cotización ' + (d.numero || '') + ' enviada a ' + dc.email + '.');
+      productosPendientes = [];
+    } else {
+      agregarBurbujaSistema('⚠️ No pudimos enviar la cotización automaticamente (' + (d.error || 'error desconocido') + '). Completa el formulario para reintentar.');
+      mostrarFormularioCotizacion(dc);
+    }
+  })
+  .catch(function(){
+    agregarBurbujaSistema('⚠️ Error de conexión al enviar la cotización. Completa el formulario para reintentar.');
+    mostrarFormularioCotizacion(dc);
+  });
+}
+
+function agregarBurbujaSistema(texto){
+  var div = document.getElementById('terecita-mensajes');
+  var b = document.createElement('div');
+  b.style.cssText = 'margin:6px 0;text-align:center;font-size:11px;color:#888;font-style:italic;';
+  b.textContent = texto;
+  div.appendChild(b);
+  div.scrollTop = div.scrollHeight;
+}
+
+// ── Formulario de respaldo: solo aparece si el envio automatico falla o si
+// el bloque DATOS_CLIENTE llego incompleto (ej. sin email valido) ─────────
+function mostrarFormularioCotizacion(prefill){
   if(document.getElementById('terecita-form-cotizacion')) return;
+  prefill = prefill || {};
   var div = document.getElementById('terecita-mensajes');
   var form = document.createElement('div');
   form.id = 'terecita-form-cotizacion';
   form.style.cssText = 'background:white;border:1px solid #e0e0e0;border-radius:10px;padding:12px;margin:6px 0;font-size:12px;';
   form.innerHTML =
     '<div style="font-weight:bold;margin-bottom:8px;color:#1a1a2e;">📩 Completa tus datos para recibir la cotización</div>' +
-    '<input id="tc-nombre" placeholder="Nombre" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
-    '<input id="tc-email" placeholder="Email" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
-    '<input id="tc-telefono" placeholder="Teléfono" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
-    '<input id="tc-empresa" placeholder="Empresa" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
-    '<input id="tc-ciudad" placeholder="Ciudad" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-nombre" placeholder="Nombre" value="'+escapeAttr(prefill.nombre)+'" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-email" placeholder="Email" value="'+escapeAttr(prefill.email)+'" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-telefono" placeholder="Teléfono" value="'+escapeAttr(prefill.telefono)+'" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-empresa" placeholder="Empresa" value="'+escapeAttr(prefill.empresa)+'" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
+    '<input id="tc-ciudad" placeholder="Ciudad" value="'+escapeAttr(prefill.ciudad)+'" style="width:100%;margin-bottom:6px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
     '<select id="tc-documento" style="width:100%;margin-bottom:8px;padding:7px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;">' +
-      '<option value="Boleta">Boleta</option>' +
-      '<option value="Factura">Factura</option>' +
+      '<option value="Boleta"'+(prefill.documento==='Factura'?'':' selected')+'>Boleta</option>' +
+      '<option value="Factura"'+(prefill.documento==='Factura'?' selected':'')+'>Factura</option>' +
     '</select>' +
     '<button id="tc-enviar-btn" style="width:100%;background:#1a1a2e;color:white;border:none;border-radius:20px;padding:9px;cursor:pointer;font-size:13px;">Enviar cotización por correo</button>' +
     '<div id="tc-status" style="margin-top:6px;font-size:11px;color:#888;"></div>';
@@ -330,8 +413,18 @@ function agregarMensaje(texto, quien, id){
   div.appendChild(burbuja);
   div.scrollTop = div.scrollHeight;
 
-  if(quien === 'terecita' && productosPendientes.length > 0){
-    mostrarFormularioCotizacion();
+  // El envio de la cotizacion se dispara SOLO cuando llega el bloque
+  // DATOS_CLIENTE (Paso 10 del system prompt) — nunca apenas aparece el
+  // RESUMEN_COMPRA, para no pedirle datos al cliente que Terecita ya le
+  // pidio conversacionalmente.
+  if(quien === 'terecita' && datosClienteCapturados){
+    var dc = datosClienteCapturados;
+    datosClienteCapturados = null;
+    if(dc.nombre && dc.email && dc.email.indexOf('@') !== -1 && productosPendientes.length > 0){
+      enviarCotizacionAuto(dc);
+    } else {
+      mostrarFormularioCotizacion(dc);
+    }
   }
 }
 

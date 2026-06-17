@@ -8,11 +8,16 @@ import os                                        # Para leer variables del siste
 import json                                      # Para manejar datos en formato JSON
 import base64                                    # Para adjuntar el PDF en el email de Resend
 import unicodedata                               # Para limpiar nombres de archivo
+import logging                                   # Para que los logs aparezcan en Railway
 import requests                                  # Para llamar a la API de Resend
 from flask import Flask, request, jsonify        # Framework web
 from flask_cors import CORS                      # Permite conexión desde WordPress
 from agente_vendedor import obtener_respuesta    # Importa la lógica del agente
 from generar_pdf import generar_pdf_cotizacion   # Genera el PDF real de la cotización
+
+# ── LOGGING (Railway captura stdout como logs del servicio) ───────────────
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger('terecita')
 
 # ── CONFIGURACIÓN ──────────────────────────────────────────────────────────
 app = Flask(__name__)   # Crea la app web
@@ -141,7 +146,17 @@ def enviar_cotizacion():
         productos = datos.get('productos') or []
         resumen = datos.get('resumen', '')
 
+        logger.info(
+            "enviar-cotizacion: recibido nombre=%r email=%r telefono=%r empresa=%r "
+            "ciudad=%r documento=%r productos=%d",
+            nombre_cliente, email_cliente, telefono, empresa, ciudad, documento, len(productos)
+        )
+
+        if not email_cliente:
+            logger.warning("enviar-cotizacion: email_cliente vacio, el envio puede fallar mas adelante")
+
         if not productos:
+            logger.warning("enviar-cotizacion: sin productos, se rechaza con 400")
             return jsonify({'ok': False, 'error': 'No se recibieron productos para cotizar'}), 400
 
         datos_cliente = {
@@ -157,6 +172,7 @@ def enviar_cotizacion():
 
         # Genera el PDF real con numeración correlativa (COT-00001, COT-00002, ...)
         ruta_pdf, numero_cot = generar_pdf_cotizacion(datos_cliente, productos)
+        logger.info("enviar-cotizacion: PDF generado %s (%s)", numero_cot, ruta_pdf)
 
         with open(ruta_pdf, 'rb') as f:
             pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
@@ -181,13 +197,18 @@ def enviar_cotizacion():
         # del propio dueño de la cuenta — por eso no se puede usar "cc" para
         # avisar a la empresa todavia. Una vez verificado un dominio en
         # resend.com/domains, se puede volver a agregar cc=EMAIL_DESTINO.
+        destinatario = email_cliente or EMAIL_DESTINO
+        logger.info("enviar-cotizacion: enviando email a %r via Resend", destinatario)
+
         enviar_email_resend(
-            to=email_cliente or EMAIL_DESTINO,
+            to=destinatario,
             subject=f"Cotización {numero_cot} - Terecita IA - McNamara SPA - {nombre_cliente}",
             html=cuerpo_html,
             attachments=[{'filename': nombre_archivo, 'content': pdf_base64}],
             reply_to=EMAIL_DESTINO,
         )
+
+        logger.info("enviar-cotizacion: email %s enviado correctamente a %r", numero_cot, destinatario)
 
         # Registrar en log
         with open(LOG_EMAIL, 'a', encoding='utf-8') as log:
@@ -196,6 +217,7 @@ def enviar_cotizacion():
         return jsonify({'ok': True, 'numero': numero_cot})
 
     except Exception as e:
+        logger.exception("enviar-cotizacion: fallo al generar/enviar la cotizacion")
         with open(LOG_EMAIL, 'a', encoding='utf-8') as log:
             log.write(f"ERROR | {str(e)}\n")
         return jsonify({'ok': False, 'error': str(e)}), 500
