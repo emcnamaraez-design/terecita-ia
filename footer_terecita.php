@@ -84,7 +84,7 @@ window.addEventListener('load', function(){
       if(msg.role === 'user' && msg.content !== 'INICIO'){
         agregarMensaje(msg.content, 'user');
       } else if(msg.role === 'assistant'){
-        agregarMensaje(msg.content, 'carmen');
+        agregarMensaje(msg.content, 'terecita');
       }
     });
   }
@@ -130,7 +130,7 @@ function llamarTerecita(mensajeInicial){
   if(mensajeInicial){
     mensajes = [{role:'user', content: mensajeInicial}];
   }
-  agregarMensaje('...', 'carmen', 'typing');
+  agregarMensaje('...', 'terecita', 'typing');
   fetch('https://web-production-8bded.up.railway.app/chat',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -147,12 +147,12 @@ function llamarTerecita(mensajeInicial){
     historial.push({role:'assistant', content: respuesta});
     localStorage.setItem('terecita_historial', JSON.stringify(historial));
     localStorage.setItem('terecita_iniciado', 'true');
-    agregarMensaje(respuesta, 'carmen');
+    agregarMensaje(respuesta, 'terecita');
   })
   .catch(e=>{
     quitarTyping();
     esperando = false;
-    agregarMensaje('Error de conexion, intenta de nuevo.', 'carmen');
+    agregarMensaje('Error de conexion, intenta de nuevo.', 'terecita');
   });
 }
 
@@ -205,7 +205,7 @@ function agregarMensaje(texto, quien, id){
   if(id) burbuja.id = id;
   burbuja.style.cssText = 'margin:5px 0;text-align:'+(quien==='user'?'right':'left')+';';
   var contenido = texto;
-  if(quien === 'carmen'){
+  if(quien === 'terecita'){
     contenido = procesarTexto(texto);
   }
   burbuja.innerHTML = '<span style="background:'+(quien==='user'?'#1a1a2e':'white')+';color:'+(quien==='user'?'white':'#333')+';padding:8px 12px;border-radius:15px;display:inline-block;max-width:92%;font-size:13px;word-wrap:break-word;line-height:1.5;text-align:left;">'+contenido+'</span>';
