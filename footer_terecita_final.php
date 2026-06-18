@@ -322,7 +322,7 @@ if ( ! defined( 'ABSPATH' ) ) {
   </div>
 
   <!-- Botón flotante -->
-  <button type="button" id="carmen-btn" onclick="toggleChat()">🤖 Habla con Terecita</button>
+  <button type="button" id="carmen-btn" onclick="toggleChat()">Cotiza con Terecita</button>
 
 </div>
 
@@ -344,9 +344,14 @@ function seleccionarImagen(event) {
   const lector = new FileReader();
   lector.onload = () => {
     imagenAdjunta = { dataUrl: lector.result, nombre: archivo.name };
+    console.log('[Terecita] Imagen lista para enviar:', archivo.name, archivo.type, archivo.size + ' bytes');
     document.getElementById('carmen-imagen-thumb').src = lector.result;
     document.getElementById('carmen-imagen-nombre').textContent = archivo.name;
     document.getElementById('carmen-imagen-preview').style.display = 'flex';
+  };
+  lector.onerror = () => {
+    console.error('[Terecita] No se pudo leer la imagen seleccionada');
+    imagenAdjunta = null;
   };
   lector.readAsDataURL(archivo);
 }
@@ -423,7 +428,10 @@ async function enviarMensaje(textoForzado) {
 
   try {
     const cuerpo = { mensaje: texto, historial: historial };
-    if (imagenParaEnviar) cuerpo.imagen = imagenParaEnviar.dataUrl;
+    if (imagenParaEnviar && imagenParaEnviar.dataUrl) {
+      cuerpo.imagen = imagenParaEnviar.dataUrl;
+      console.log('[Terecita] Enviando mensaje con imagen adjunta:', imagenParaEnviar.nombre);
+    }
 
     // Llamar al agente
     const respuesta = await fetch(CARMEN_URL, {
