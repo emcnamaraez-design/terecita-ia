@@ -202,6 +202,13 @@ if ( ! defined( 'ABSPATH' ) ) {
   border-top: 1px solid #e0e0e0;
   flex-shrink: 0;
 }
+#carmen-imagen-preview img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
 #carmen-imagen-preview button {
   background: none;
   border: none;
@@ -282,6 +289,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
     <!-- Vista previa de imagen adjunta -->
     <div id="carmen-imagen-preview">
+      <img id="carmen-imagen-thumb" alt="Vista previa">
       <span id="carmen-imagen-nombre"></span>
       <button onclick="quitarImagenAdjunta()">✕ quitar</button>
     </div>
@@ -326,7 +334,8 @@ function seleccionarImagen(event) {
   const lector = new FileReader();
   lector.onload = () => {
     imagenAdjunta = { dataUrl: lector.result, nombre: archivo.name };
-    document.getElementById('carmen-imagen-nombre').textContent = '📎 ' + archivo.name;
+    document.getElementById('carmen-imagen-thumb').src = lector.result;
+    document.getElementById('carmen-imagen-nombre').textContent = archivo.name;
     document.getElementById('carmen-imagen-preview').style.display = 'flex';
   };
   lector.readAsDataURL(archivo);
@@ -335,6 +344,7 @@ function seleccionarImagen(event) {
 function quitarImagenAdjunta() {
   imagenAdjunta = null;
   document.getElementById('carmen-imagen-input').value = '';
+  document.getElementById('carmen-imagen-thumb').src = '';
   document.getElementById('carmen-imagen-preview').style.display = 'none';
 }
 
