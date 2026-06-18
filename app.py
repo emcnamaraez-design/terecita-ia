@@ -136,10 +136,19 @@ def chat():
                     media_type = cabecera.replace('data:', '') or media_type
                 imagen = {'data': imagen_data, 'media_type': media_type}
 
+        if imagen:
+            print(f"[DIAGNOSTICO] /chat: campo 'imagen' recibido, "
+                  f"media_type={imagen.get('media_type')!r}, "
+                  f"tamano_base64={len(imagen.get('data', ''))} bytes", flush=True)
+        else:
+            print("[DIAGNOSTICO] /chat: no llego ningun campo 'imagen' en este request", flush=True)
+
         if not mensaje:
             return jsonify({'respuesta': 'Error: mensaje vacío', 'reply': 'Error: mensaje vacío'}), 400
 
         # Llama al cerebro del agente para obtener la respuesta
+        print(f"[DIAGNOSTICO] /chat: llamando a obtener_respuesta() con imagen={'si' if imagen else 'no'}",
+              flush=True)
         respuesta = obtener_respuesta(mensaje, historial, imagen)
 
         if 'DATOS_CLIENTE' in respuesta:

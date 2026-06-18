@@ -338,17 +338,22 @@ let productosResumen = [];  // Acumula productos del RESUMEN_COMPRA para enviar 
 let imagenAdjunta = null;   // { dataUrl, nombre } de la imagen del carrito seleccionada para enviar
 
 // ── Adjuntar/quitar imagen del carrito ─────────────────────────────────────
-function seleccionarImagen(event) {
-  const archivo = event.target.files[0];
-  if (!archivo) return;
+// Procesa cualquier imagen (del clip, de un paste o de un drag&drop) de forma
+// unica: la lee como base64, actualiza la vista previa y la muestra en el chat.
+function procesarArchivoImagen(archivo) {
+  if (!archivo || !archivo.type || !archivo.type.startsWith('image/')) {
+    console.warn('[Terecita] Se ignoro un archivo que no es imagen:', archivo && archivo.type);
+    return;
+  }
   const lector = new FileReader();
   lector.onload = () => {
-    imagenAdjunta = { dataUrl: lector.result, nombre: archivo.name };
-    console.log('[Terecita] Imagen lista para enviar:', archivo.name, archivo.type, archivo.size + ' bytes');
+    const nombre = archivo.name || 'imagen-pegada.png';
+    imagenAdjunta = { dataUrl: lector.result, nombre };
+    console.log('[Terecita] Imagen lista para enviar:', nombre, archivo.type, archivo.size + ' bytes');
 
     // Vista previa junto al input (nombre del archivo + miniatura chica)
     document.getElementById('carmen-imagen-thumb').src = lector.result;
-    document.getElementById('carmen-imagen-nombre').textContent = archivo.name;
+    document.getElementById('carmen-imagen-nombre').textContent = nombre;
     document.getElementById('carmen-imagen-preview').style.display = 'flex';
 
     // Miniatura visible dentro del area de mensajes, como burbuja del usuario
@@ -359,6 +364,11 @@ function seleccionarImagen(event) {
     imagenAdjunta = null;
   };
   lector.readAsDataURL(archivo);
+}
+
+function seleccionarImagen(event) {
+  const archivo = event.target.files[0];
+  procesarArchivoImagen(archivo);
 }
 
 // ── Mostrar la miniatura seleccionada dentro del chat, antes de enviar ─────
@@ -378,10 +388,17 @@ function mostrarImagenEnChat(dataUrl) {
 // ── Quitar la imagen adjunta. Si quitarDelChat es false, la miniatura ya
 //    mostrada en el chat queda como parte del historial (se acaba de enviar) ─
 function quitarImagenAdjunta(quitarDelChat = true) {
+  console.log('[Terecita] Quitando imagen adjunta. quitarDelChat=', quitarDelChat);
   imagenAdjunta = null;
-  document.getElementById('carmen-imagen-input').value = '';
-  document.getElementById('carmen-imagen-thumb').src = '';
-  document.getElementById('carmen-imagen-preview').style.display = 'none';
+
+  const inputArchivo = document.getElementById('carmen-imagen-input');
+  if (inputArchivo) inputArchivo.value = '';
+
+  const thumb = document.getElementById('carmen-imagen-thumb');
+  if (thumb) thumb.removeAttribute('src');
+
+  const preview = document.getElementById('carmen-imagen-preview');
+  if (preview) preview.style.display = 'none';
 
   const previo = document.getElementById('carmen-imagen-chat-preview');
   if (previo) {
@@ -391,6 +408,47 @@ function quitarImagenAdjunta(quitarDelChat = true) {
       previo.removeAttribute('id');
     }
   }
+}
+
+// ── Pegar imagen con Ctrl+V en el input de texto ───────────────────────────
+const carmenInputTexto = document.getElementById('carmen-input');
+if (carmenInputTexto) {
+  carmenInputTexto.addEventListener('paste', (event) => {
+    const items = event.clipboardData && event.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const archivo = item.getAsFile();
+        if (archivo) {
+          event.preventDefault();
+          console.log('[Terecita] Imagen pegada con Ctrl+V:', item.type);
+          procesarArchivoImagen(archivo);
+        }
+        break;
+      }
+    }
+  });
+}
+
+// ── Arrastrar y soltar una imagen sobre la ventana del chat ────────────────
+const carmenVentanaDrop = document.getElementById('carmen-ventana');
+if (carmenVentanaDrop) {
+  carmenVentanaDrop.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    carmenVentanaDrop.style.outline = '2px dashed #2563eb';
+  });
+  carmenVentanaDrop.addEventListener('dragleave', () => {
+    carmenVentanaDrop.style.outline = 'none';
+  });
+  carmenVentanaDrop.addEventListener('drop', (event) => {
+    event.preventDefault();
+    carmenVentanaDrop.style.outline = 'none';
+    const archivo = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (archivo) {
+      console.log('[Terecita] Imagen soltada con drag&drop:', archivo.name, archivo.type);
+      procesarArchivoImagen(archivo);
+    }
+  });
 }
 
 // ── Abrir/cerrar el chat ──────────────────────────────────────────────────
