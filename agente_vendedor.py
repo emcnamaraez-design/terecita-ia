@@ -228,9 +228,10 @@ PRODUCTO: [nombre] | SKU: [sku] | Cant: [n] | $[precio unitario] | Total: $[tota
 TOTAL GENERAL: $[total]
 FIN_RESUMEN_COMPRA
 
-## Bloque COTIZACION_INTERNA (para el Modo Cotizacion Interna — dispara el envio del email PDF)
+## Bloque COTIZACION_INTERNA (para el Modo Cotizacion Interna — dispara el mismo envio de email PDF que usa el flujo normal, via el mismo endpoint /enviar-cotizacion)
+- El campo "Cliente" debe incluir SIEMPRE la empresa, el RUT y la direccion de facturacion juntos en una sola linea, en este formato exacto, para que viajen completos al PDF y al email: "[empresa] | RUT: [rut] | Direccion: [direccion]".
 COTIZACION_INTERNA
-Cliente: [nombre o empresa del cliente]
+Cliente: [empresa] | RUT: [rut] | Direccion: [direccion]
 Email: [email del cliente]
 PRODUCTO: [SKU] | [nombre del producto] | [cantidad] | [precio unitario sin signos ni puntos]
 PRODUCTO: [SKU] | [nombre del producto] | [cantidad] | [precio unitario sin signos ni puntos]
