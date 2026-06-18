@@ -6,6 +6,7 @@ Aquí vive el system prompt, la carga del catálogo y la llamada a Claude
 # ── IMPORTACIONES ──────────────────────────────────────────────────────────
 import os        # Para leer la clave API del sistema
 import csv       # Para leer el catálogo de productos CSV
+import json      # Para parsear el JSON que devuelve Claude al leer el carrito
 import anthropic # SDK oficial de Claude (Anthropic)
 
 # ── CONFIGURACIÓN ──────────────────────────────────────────────────────────
@@ -14,6 +15,9 @@ client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 # Modelo de Claude que usamos (Haiku = rápido y económico)
 MODELO = "claude-haiku-4-5-20251001"
+
+# Modelo con vision que usamos solo para leer capturas del carrito WooCommerce
+MODELO_VISION = "claude-sonnet-4-20250514"
 
 # Máximo de tokens en la respuesta (controla el largo de las respuestas)
 MAX_TOKENS = 2000
@@ -210,6 +214,8 @@ FIN_DATOS_CLIENTE
 - Al activarse, abandona el flujo de venta normal para ese mensaje y no vuelvas a saludar ni a hacer las preguntas de los Pasos 1 a 3.
 - Extrae del mensaje los SKUs y cantidades (formato "SKU-001 x10, SKU-002 x5"), y si vienen indicados, el nombre/empresa del cliente ("Cliente: ..."), su email ("Email: ..."), RUT ("RUT: ...") y direccion de facturacion ("Direccion: ...").
 - Busca cada SKU en el catalogo de productos de esta misma conversacion. Si un SKU no existe en el catalogo, indicalo claramente en tu respuesta y no lo incluyas en el cuadro resumen.
+- Si el mensaje incluye una seccion "PRODUCTOS_EXTRAIDOS_IMAGEN:" (el usuario adjunto una captura del carrito de WooCommerce), usa esos productos directamente con el nombre, cantidad y precio unitario indicados en cada linea ("nombre | cantidad | precio_unitario"), sin buscarlos por SKU en el catalogo porque no tienen SKU asociado. En el cuadro resumen y en el bloque COTIZACION_INTERNA usa "-" como SKU para estos productos.
+- Si esa seccion dice "ERROR al leer la imagen del carrito", avisa al usuario que no se pudo leer la imagen y pidele que reenvie los productos en texto (SKU y cantidad) o que adjunte otra captura.
 - Datos de facturacion obligatorios antes del cuadro resumen: nombre de la empresa, RUT y direccion de facturacion. Si alguno no vino en el mensaje inicial, pidelo de a uno por mensaje (un dato por vez) hasta tener los tres. No muestres el cuadro resumen mientras falte alguno de estos datos.
 - Una vez que tengas empresa, RUT y direccion de facturacion, muestra el cuadro resumen usando el bloque RESUMEN_COMPRA (formato abajo).
 - Si no se indico el email del cliente en el mensaje, muestra el cuadro igual y pide el email antes de continuar. No generes la cotizacion sin email.
@@ -233,8 +239,8 @@ FIN_RESUMEN_COMPRA
 COTIZACION_INTERNA
 Cliente: [empresa] | RUT: [rut] | Direccion: [direccion]
 Email: [email del cliente]
-PRODUCTO: [SKU] | [nombre del producto] | [cantidad] | [precio unitario sin signos ni puntos]
-PRODUCTO: [SKU] | [nombre del producto] | [cantidad] | [precio unitario sin signos ni puntos]
+PRODUCTO: [SKU o "-" si viene de una imagen] | [nombre del producto] | [cantidad] | [precio unitario sin signos ni puntos]
+PRODUCTO: [SKU o "-" si viene de una imagen] | [nombre del producto] | [cantidad] | [precio unitario sin signos ni puntos]
 FIN_COTIZACION_INTERNA
 
 ## Catalogo de productos
@@ -263,8 +269,54 @@ Para todos los demas usuarios, Terecita funciona normalmente como agente de McNa
 """
 
 
+# ── LECTURA DE IMAGEN DE CARRITO (Modo Cotizacion Interna) ──────────────────
+def extraer_carrito_de_imagen(imagen_base64, media_type):
+    """
+    Usa Claude con vision (MODELO_VISION) para leer una captura del carrito de
+    WooCommerce y devolver la lista de productos que contiene.
+
+    Parámetros:
+    - imagen_base64: string con la imagen codificada en base64 (sin el prefijo data:...)
+    - media_type: string tipo "image/png" o "image/jpeg"
+
+    Retorna:
+    - lista de dicts [{"nombre", "cantidad", "precio_unitario"}, ...]
+    """
+    prompt_extraccion = (
+        "Esta imagen es una captura de pantalla del carrito de compras de una tienda WooCommerce. "
+        "Lee cada fila del carrito y devuelve UNICAMENTE un JSON valido (sin texto adicional, "
+        "sin bloque de codigo markdown) con una lista de objetos con las claves "
+        "\"nombre\", \"cantidad\" y \"precio_unitario\" (precio_unitario como numero entero, "
+        "sin signos $ ni puntos de miles). Ejemplo de formato de salida: "
+        "[{\"nombre\": \"Polera Basica\", \"cantidad\": 10, \"precio_unitario\": 9990}]"
+    )
+
+    respuesta = client.messages.create(
+        model=MODELO_VISION,
+        max_tokens=1500,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": imagen_base64},
+                },
+                {"type": "text", "text": prompt_extraccion},
+            ],
+        }],
+    )
+
+    texto_json = respuesta.content[0].text.strip()
+    if texto_json.startswith('```'):
+        texto_json = texto_json.strip('`')
+        if texto_json.lower().startswith('json'):
+            texto_json = texto_json[4:].strip()
+
+    return json.loads(texto_json)
+
+
 # ── FUNCIÓN PRINCIPAL: obtener respuesta de Terecita ────────────────────────
-def obtener_respuesta(mensaje_usuario, historial):
+def obtener_respuesta(mensaje_usuario, historial, imagen=None):
     """
     Recibe el mensaje del cliente y el historial de la conversación.
     Llama a Claude y devuelve la respuesta de Terecita.
@@ -272,10 +324,28 @@ def obtener_respuesta(mensaje_usuario, historial):
     Parámetros:
     - mensaje_usuario: string con lo que escribió el cliente
     - historial: lista de dicts [{"role": "user/assistant", "content": "..."}]
+    - imagen: dict opcional {"data": base64, "media_type": "image/png"} con una
+      captura del carrito de WooCommerce, solo usado en el Modo Cotizacion Interna
 
     Retorna:
     - string con la respuesta de Terecita
     """
+
+    # Si viene una imagen junto con la palabra clave de Cotizacion Interna, la
+    # leemos con vision y agregamos los productos detectados como texto plano
+    # al mensaje del usuario, para que el flujo normal de Terecita los procese.
+    if imagen and 'COTIZACION INTERNA' in mensaje_usuario.upper():
+        try:
+            productos_imagen = extraer_carrito_de_imagen(
+                imagen.get('data', ''), imagen.get('media_type', 'image/jpeg')
+            )
+            lineas = "\n".join(
+                f"{p.get('nombre', '')} | {p.get('cantidad', 1)} | {p.get('precio_unitario', 0)}"
+                for p in productos_imagen
+            )
+            mensaje_usuario += f"\n\nPRODUCTOS_EXTRAIDOS_IMAGEN:\n{lineas}"
+        except Exception as e:
+            mensaje_usuario += f"\n\nPRODUCTOS_EXTRAIDOS_IMAGEN: ERROR al leer la imagen del carrito ({e})"
 
     # Armar los mensajes para la API de Claude
     # El historial ya tiene el formato correcto [{"role":..., "content":...}]

@@ -180,6 +180,35 @@ if ( ! defined( 'ABSPATH' ) ) {
   cursor: pointer;
   font-size: 16px;
 }
+#carmen-adjuntar {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 16px;
+  color: #1a1a2e;
+}
+#carmen-imagen-preview {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #555;
+  background: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+#carmen-imagen-preview button {
+  background: none;
+  border: none;
+  color: #e63946;
+  cursor: pointer;
+  font-size: 12px;
+}
 
 /* ── Footer del widget ── */
 #carmen-footer-brand {
@@ -251,8 +280,16 @@ if ( ! defined( 'ABSPATH' ) ) {
     <!-- Mensajes -->
     <div id="carmen-mensajes"></div>
 
+    <!-- Vista previa de imagen adjunta -->
+    <div id="carmen-imagen-preview">
+      <span id="carmen-imagen-nombre"></span>
+      <button onclick="quitarImagenAdjunta()">✕ quitar</button>
+    </div>
+
     <!-- Input -->
     <div id="carmen-input-area">
+      <input type="file" id="carmen-imagen-input" accept="image/*" style="display:none;" onchange="seleccionarImagen(event)">
+      <button id="carmen-adjuntar" onclick="document.getElementById('carmen-imagen-input').click()" title="Adjuntar imagen del carrito">📎</button>
       <input id="carmen-input" type="text" placeholder="Escribe tu mensaje..."
         onkeypress="if(event.key==='Enter') enviarMensaje()">
       <button id="carmen-enviar" onclick="enviarMensaje()">➤</button>
@@ -280,6 +317,26 @@ let historial = [];         // Historial de la conversación para la API
 let chatAbierto = false;    // Si el chat está visible o no
 let primerMensaje = true;   // Para saber si es el inicio de la conversación
 let productosResumen = [];  // Acumula productos del RESUMEN_COMPRA para enviar en cotizacion
+let imagenAdjunta = null;   // { dataUrl, nombre } de la imagen del carrito seleccionada para enviar
+
+// ── Adjuntar/quitar imagen del carrito ─────────────────────────────────────
+function seleccionarImagen(event) {
+  const archivo = event.target.files[0];
+  if (!archivo) return;
+  const lector = new FileReader();
+  lector.onload = () => {
+    imagenAdjunta = { dataUrl: lector.result, nombre: archivo.name };
+    document.getElementById('carmen-imagen-nombre').textContent = '📎 ' + archivo.name;
+    document.getElementById('carmen-imagen-preview').style.display = 'flex';
+  };
+  lector.readAsDataURL(archivo);
+}
+
+function quitarImagenAdjunta() {
+  imagenAdjunta = null;
+  document.getElementById('carmen-imagen-input').value = '';
+  document.getElementById('carmen-imagen-preview').style.display = 'none';
+}
 
 // ── Abrir/cerrar el chat ──────────────────────────────────────────────────
 function toggleChat() {
@@ -332,24 +389,27 @@ async function enviarMensaje(textoForzado) {
   const texto = textoForzado || input.value.trim();
   if (!texto) return;
 
+  const imagenParaEnviar = imagenAdjunta;
+
   // Limpiar el input
   if (!textoForzado) {
     input.value = '';
     agregarBurbuja(texto, 'usuario');  // Mostrar el mensaje del usuario
   }
+  if (imagenParaEnviar) quitarImagenAdjunta();
 
   // Mostrar indicador de escritura
   mostrarTyping();
 
   try {
+    const cuerpo = { mensaje: texto, historial: historial };
+    if (imagenParaEnviar) cuerpo.imagen = imagenParaEnviar.dataUrl;
+
     // Llamar al agente
     const respuesta = await fetch(CARMEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mensaje: texto,
-        historial: historial
-      })
+      body: JSON.stringify(cuerpo)
     });
 
     const datos = await respuesta.json();

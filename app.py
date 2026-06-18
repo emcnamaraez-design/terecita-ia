@@ -92,27 +92,55 @@ def chat():
     Acepta dos formatos de body (compatibilidad con distintos widgets):
     1. { "mensaje": "texto del cliente", "historial": [...] }
     2. { "messages": [{"role": "user"|"assistant", "content": "..."}, ...] }
+    También acepta una imagen opcional (captura del carrito WooCommerce, usada
+    en el Modo Cotizacion Interna), en dos formatos:
+    a) multipart/form-data con campos "mensaje", "historial" (JSON en texto) e "imagen" (archivo)
+    b) JSON con un campo "imagen": data URI ("data:image/png;base64,...") o base64 puro
+       (en este ultimo caso se puede indicar el mime type en "imagen_tipo")
     Devuelve: { "respuesta": "texto de Terecita", "reply": "texto de Terecita" }
     """
     try:
-        datos = request.get_json() or {}
+        imagen = None
 
-        if 'messages' in datos:
-            mensajes_completos = datos.get('messages') or []
-            if not mensajes_completos:
-                return jsonify({'respuesta': 'Error: messages vacío', 'reply': 'Error: messages vacío'}), 400
-            ultimo = mensajes_completos[-1]
-            mensaje = ultimo.get('content', '')
-            historial = mensajes_completos[:-1]
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            mensaje = request.form.get('mensaje', '')
+            try:
+                historial = json.loads(request.form.get('historial', '[]'))
+            except ValueError:
+                historial = []
+            archivo_imagen = request.files.get('imagen')
+            if archivo_imagen:
+                imagen = {
+                    'data': base64.b64encode(archivo_imagen.read()).decode('utf-8'),
+                    'media_type': archivo_imagen.mimetype or 'image/jpeg',
+                }
         else:
-            mensaje = datos.get('mensaje', '')          # Extrae el mensaje del cliente
-            historial = datos.get('historial', [])      # Extrae el historial de conversación
+            datos = request.get_json() or {}
+
+            if 'messages' in datos:
+                mensajes_completos = datos.get('messages') or []
+                if not mensajes_completos:
+                    return jsonify({'respuesta': 'Error: messages vacío', 'reply': 'Error: messages vacío'}), 400
+                ultimo = mensajes_completos[-1]
+                mensaje = ultimo.get('content', '')
+                historial = mensajes_completos[:-1]
+            else:
+                mensaje = datos.get('mensaje', '')          # Extrae el mensaje del cliente
+                historial = datos.get('historial', [])      # Extrae el historial de conversación
+
+            imagen_data = datos.get('imagen')
+            if imagen_data:
+                media_type = datos.get('imagen_tipo', 'image/jpeg')
+                if imagen_data.startswith('data:') and ';base64,' in imagen_data:
+                    cabecera, imagen_data = imagen_data.split(';base64,', 1)
+                    media_type = cabecera.replace('data:', '') or media_type
+                imagen = {'data': imagen_data, 'media_type': media_type}
 
         if not mensaje:
             return jsonify({'respuesta': 'Error: mensaje vacío', 'reply': 'Error: mensaje vacío'}), 400
 
         # Llama al cerebro del agente para obtener la respuesta
-        respuesta = obtener_respuesta(mensaje, historial)
+        respuesta = obtener_respuesta(mensaje, historial, imagen)
 
         return jsonify({'respuesta': respuesta, 'reply': respuesta})    # Devuelve la respuesta al widget
 
