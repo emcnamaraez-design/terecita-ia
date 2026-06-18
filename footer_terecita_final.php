@@ -181,15 +181,25 @@ if ( ! defined( 'ABSPATH' ) ) {
   font-size: 16px;
 }
 #carmen-adjuntar {
-  background: none;
-  border: 1px solid #ddd;
-  border-radius: 50%;
-  width: 36px;
-  height: 36px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: #f0f0f0 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 50% !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px;
+  padding: 0 !important;
+  margin: 0;
   flex-shrink: 0;
   cursor: pointer;
-  font-size: 16px;
-  color: #1a1a2e;
+  font-size: 16px !important;
+  line-height: 1;
+  color: #1a1a2e !important;
+  box-sizing: border-box;
 }
 #carmen-imagen-preview {
   display: none;
@@ -273,11 +283,11 @@ if ( ! defined( 'ABSPATH' ) ) {
     <div id="carmen-header">
       <span style="font-size:14px;">🤖 Terecita - McNamara SPA</span>
       <div style="display:flex;align-items:center;gap:8px;">
-        <button onclick="limpiarConversacion()"
+        <button type="button" onclick="limpiarConversacion()"
           style="background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;">
           Nueva conversación
         </button>
-        <button onclick="toggleChat()"
+        <button type="button" onclick="toggleChat()"
           style="background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1;">
           ×
         </button>
@@ -291,16 +301,16 @@ if ( ! defined( 'ABSPATH' ) ) {
     <div id="carmen-imagen-preview">
       <img id="carmen-imagen-thumb" alt="Vista previa">
       <span id="carmen-imagen-nombre"></span>
-      <button onclick="quitarImagenAdjunta()">✕ quitar</button>
+      <button type="button" onclick="quitarImagenAdjunta()">✕ quitar</button>
     </div>
 
     <!-- Input -->
     <div id="carmen-input-area">
       <input type="file" id="carmen-imagen-input" accept="image/*" style="display:none;" onchange="seleccionarImagen(event)">
-      <button id="carmen-adjuntar" onclick="document.getElementById('carmen-imagen-input').click()" title="Adjuntar imagen del carrito">📎</button>
+      <button type="button" id="carmen-adjuntar" onclick="document.getElementById('carmen-imagen-input').click()" title="Adjuntar imagen del carrito">📎</button>
       <input id="carmen-input" type="text" placeholder="Escribe tu mensaje..."
         onkeypress="if(event.key==='Enter') enviarMensaje()">
-      <button id="carmen-enviar" onclick="enviarMensaje()">➤</button>
+      <button type="button" id="carmen-enviar" onclick="enviarMensaje()">➤</button>
     </div>
 
     <!-- Footer de marca -->
@@ -312,7 +322,7 @@ if ( ! defined( 'ABSPATH' ) ) {
   </div>
 
   <!-- Botón flotante -->
-  <button id="carmen-btn" onclick="toggleChat()">🤖 Habla con Terecita</button>
+  <button type="button" id="carmen-btn" onclick="toggleChat()">🤖 Habla con Terecita</button>
 
 </div>
 

@@ -142,6 +142,10 @@ def chat():
         # Llama al cerebro del agente para obtener la respuesta
         respuesta = obtener_respuesta(mensaje, historial, imagen)
 
+        if 'DATOS_CLIENTE' in respuesta:
+            print(f"[DIAGNOSTICO] /chat: bloque DATOS_CLIENTE detectado en la respuesta de Terecita "
+                  f"(mensaje_usuario={mensaje[:80]!r})", flush=True)
+
         return jsonify({'respuesta': respuesta, 'reply': respuesta})    # Devuelve la respuesta al widget
 
     except Exception as e:
@@ -176,6 +180,9 @@ def enviar_cotizacion():
         razon_social = datos.get('razon_social', '')
         productos = datos.get('productos') or []
         resumen = datos.get('resumen', '')
+
+        print(f"[DIAGNOSTICO] /enviar-cotizacion: llamado con nombre={nombre_cliente!r} "
+              f"email={email_cliente!r} productos={len(productos)}", flush=True)
 
         logger.info(
             "enviar-cotizacion: recibido nombre=%r email=%r telefono=%r empresa=%r "
@@ -224,8 +231,10 @@ def enviar_cotizacion():
 
         destinatario = email_cliente or EMAIL_DESTINO
         logger.info("enviar-cotizacion: enviando email a %r via Resend", destinatario)
+        print(f"[DIAGNOSTICO] /enviar-cotizacion: llamando a Resend, to={destinatario!r} "
+              f"cc={EMAIL_CC_COTIZACIONES!r} numero={numero_cot}", flush=True)
 
-        enviar_email_resend(
+        resultado_resend = enviar_email_resend(
             to=destinatario,
             subject=f"Cotización {numero_cot} - Terecita IA - McNamara SPA - {nombre_cliente}",
             html=cuerpo_html,
@@ -235,6 +244,7 @@ def enviar_cotizacion():
         )
 
         logger.info("enviar-cotizacion: email %s enviado correctamente a %r", numero_cot, destinatario)
+        print(f"[DIAGNOSTICO] /enviar-cotizacion: respuesta de Resend = {resultado_resend!r}", flush=True)
 
         # Registrar en log
         with open(LOG_EMAIL, 'a', encoding='utf-8') as log:
@@ -244,6 +254,7 @@ def enviar_cotizacion():
 
     except Exception as e:
         logger.exception("enviar-cotizacion: fallo al generar/enviar la cotizacion")
+        print(f"[DIAGNOSTICO] /enviar-cotizacion: ERROR {e}", flush=True)
         with open(LOG_EMAIL, 'a', encoding='utf-8') as log:
             log.write(f"ERROR | {str(e)}\n")
         return jsonify({'ok': False, 'error': str(e)}), 500
