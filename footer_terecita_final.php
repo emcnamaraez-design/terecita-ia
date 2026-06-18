@@ -345,9 +345,14 @@ function seleccionarImagen(event) {
   lector.onload = () => {
     imagenAdjunta = { dataUrl: lector.result, nombre: archivo.name };
     console.log('[Terecita] Imagen lista para enviar:', archivo.name, archivo.type, archivo.size + ' bytes');
+
+    // Vista previa junto al input (nombre del archivo + miniatura chica)
     document.getElementById('carmen-imagen-thumb').src = lector.result;
     document.getElementById('carmen-imagen-nombre').textContent = archivo.name;
     document.getElementById('carmen-imagen-preview').style.display = 'flex';
+
+    // Miniatura visible dentro del area de mensajes, como burbuja del usuario
+    mostrarImagenEnChat(lector.result);
   };
   lector.onerror = () => {
     console.error('[Terecita] No se pudo leer la imagen seleccionada');
@@ -356,11 +361,36 @@ function seleccionarImagen(event) {
   lector.readAsDataURL(archivo);
 }
 
-function quitarImagenAdjunta() {
+// ── Mostrar la miniatura seleccionada dentro del chat, antes de enviar ─────
+function mostrarImagenEnChat(dataUrl) {
+  const previo = document.getElementById('carmen-imagen-chat-preview');
+  if (previo) previo.remove();
+
+  const mensajes = document.getElementById('carmen-mensajes');
+  const div = document.createElement('div');
+  div.className = 'carmen-msg-usuario';
+  div.id = 'carmen-imagen-chat-preview';
+  div.innerHTML = `<span style="padding:6px;display:inline-block;"><img src="${dataUrl}" alt="Imagen adjunta" style="max-width:140px;max-height:140px;border-radius:10px;display:block;"></span>`;
+  mensajes.appendChild(div);
+  mensajes.scrollTop = mensajes.scrollHeight;
+}
+
+// ── Quitar la imagen adjunta. Si quitarDelChat es false, la miniatura ya
+//    mostrada en el chat queda como parte del historial (se acaba de enviar) ─
+function quitarImagenAdjunta(quitarDelChat = true) {
   imagenAdjunta = null;
   document.getElementById('carmen-imagen-input').value = '';
   document.getElementById('carmen-imagen-thumb').src = '';
   document.getElementById('carmen-imagen-preview').style.display = 'none';
+
+  const previo = document.getElementById('carmen-imagen-chat-preview');
+  if (previo) {
+    if (quitarDelChat) {
+      previo.remove();
+    } else {
+      previo.removeAttribute('id');
+    }
+  }
 }
 
 // ── Abrir/cerrar el chat ──────────────────────────────────────────────────
@@ -421,7 +451,7 @@ async function enviarMensaje(textoForzado) {
     input.value = '';
     agregarBurbuja(texto, 'usuario');  // Mostrar el mensaje del usuario
   }
-  if (imagenParaEnviar) quitarImagenAdjunta();
+  if (imagenParaEnviar) quitarImagenAdjunta(false);
 
   // Mostrar indicador de escritura
   mostrarTyping();
