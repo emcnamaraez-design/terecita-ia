@@ -29,6 +29,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Email de destino donde llegan las cotizaciones
 EMAIL_DESTINO = "contacto@mc-namaraspa.cl"
 
+# Copia (CC) obligatoria en todos los emails de cotizacion
+EMAIL_CC_COTIZACIONES = "ventamcnamara@gmail.com"
+
 # Log de errores de email
 LOG_EMAIL = os.path.join(BASE_DIR, "email_log.txt")
 
@@ -191,12 +194,6 @@ def enviar_cotizacion():
         {f'<pre style="white-space:pre-wrap;font-family:inherit;">{resumen}</pre>' if resumen else ''}
         """
 
-        # El cliente es el destinatario principal de su cotizacion. Mientras
-        # la cuenta de Resend no tenga un dominio verificado (modo sandbox),
-        # Resend exige que TODOS los destinatarios (to y cc) sean el correo
-        # del propio dueño de la cuenta — por eso no se puede usar "cc" para
-        # avisar a la empresa todavia. Una vez verificado un dominio en
-        # resend.com/domains, se puede volver a agregar cc=EMAIL_DESTINO.
         destinatario = email_cliente or EMAIL_DESTINO
         logger.info("enviar-cotizacion: enviando email a %r via Resend", destinatario)
 
@@ -206,6 +203,7 @@ def enviar_cotizacion():
             html=cuerpo_html,
             attachments=[{'filename': nombre_archivo, 'content': pdf_base64}],
             reply_to=EMAIL_DESTINO,
+            cc=EMAIL_CC_COTIZACIONES,
         )
 
         logger.info("enviar-cotizacion: email %s enviado correctamente a %r", numero_cot, destinatario)
