@@ -323,16 +323,30 @@ def obtener_respuesta(mensaje_usuario, historial, imagen=None):
     # leemos con vision y agregamos los productos detectados como texto plano
     # al mensaje del usuario, para que el flujo normal de Terecita los procese.
     if imagen and 'COTIZACION INTERNA' in mensaje_usuario.upper():
+        imagen_base64 = imagen.get('data', '')
+        imagen_tipo = imagen.get('media_type', 'image/jpeg')
+
+        # Defensa adicional: si por algun motivo todavia viene con el prefijo
+        # data URI ("data:image/png;base64,..."), se lo quitamos aqui mismo
+        # antes de mandarlo a Claude, que solo acepta el base64 puro.
+        if imagen_base64.startswith('data:') and ';base64,' in imagen_base64:
+            cabecera, imagen_base64 = imagen_base64.split(';base64,', 1)
+            imagen_tipo = cabecera.replace('data:', '') or imagen_tipo
+
+        print(f"[DIAGNOSTICO] obtener_respuesta: enviando imagen a Claude vision "
+              f"(media_type={imagen_tipo!r}, tamano_base64={len(imagen_base64)} bytes)", flush=True)
+
         try:
-            productos_imagen = extraer_carrito_de_imagen(
-                imagen.get('data', ''), imagen.get('media_type', 'image/jpeg')
-            )
+            productos_imagen = extraer_carrito_de_imagen(imagen_base64, imagen_tipo)
+            print(f"[DIAGNOSTICO] obtener_respuesta: Claude vision detecto "
+                  f"{len(productos_imagen)} producto(s) en la imagen", flush=True)
             lineas = "\n".join(
                 f"{p.get('nombre', '')} | {p.get('cantidad', 1)} | {p.get('precio_unitario', 0)}"
                 for p in productos_imagen
             )
             mensaje_usuario += f"\n\nPRODUCTOS_EXTRAIDOS_IMAGEN:\n{lineas}"
         except Exception as e:
+            print(f"[DIAGNOSTICO] obtener_respuesta: ERROR al leer la imagen con Claude vision: {e}", flush=True)
             mensaje_usuario += f"\n\nPRODUCTOS_EXTRAIDOS_IMAGEN: ERROR al leer la imagen del carrito ({e})"
 
     # Armar los mensajes para la API de Claude
