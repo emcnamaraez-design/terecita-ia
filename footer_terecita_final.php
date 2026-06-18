@@ -473,46 +473,6 @@ function procesarRespuesta(texto) {
     productosResumen = [];
   }
 
-  // 1b. Detectar COTIZACION_INTERNA (dispara envio de cotizacion interna por SKU)
-  const matchCotInterna = texto.match(/COTIZACION_INTERNA\n([\s\S]*?)FIN_COTIZACION_INTERNA/);
-  if (matchCotInterna) {
-    const bloqueCot = matchCotInterna[1];
-    const extraerCot = (campo) => {
-      const m = bloqueCot.match(new RegExp(campo + ':\\s*(.+)'));
-      return m ? m[1].trim() : '';
-    };
-    const productosCot = [];
-    const regexProductoCot = /PRODUCTO:\s*(.+)/g;
-    let matchProductoCot;
-    while ((matchProductoCot = regexProductoCot.exec(bloqueCot)) !== null) {
-      const partes = matchProductoCot[1].split('|').map(p => p.trim());
-      productosCot.push({
-        sku:             partes[0] || '',
-        nombre:          partes[1] || '',
-        cantidad:        partes[2] || '1',
-        precio_unitario: (partes[3] || '0').replace(/[$\.]/g, '').replace('CLP', '').trim(),
-      });
-    }
-    const datosCotInterna = {
-      nombre:    extraerCot('Cliente'),
-      email:     extraerCot('Email'),
-      productos: productosCot,
-    };
-    texto = texto.replace(/COTIZACION_INTERNA[\s\S]*?FIN_COTIZACION_INTERNA/, '').trim();
-    fetch(CARMEN_URL.replace('/chat', '/enviar-cotizacion'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(datosCotInterna)
-    }).then(r => r.json()).then(res => {
-      if (res.ok) {
-        const div = document.createElement('div');
-        div.className = 'carmen-msg-agente';
-        div.innerHTML = '<span>✅ Cotización interna enviada. Revisa tu correo en unos minutos.</span>';
-        mensajes.appendChild(div);
-      }
-    }).catch(() => {});
-  }
-
   // 2. Detectar bloques RESUMEN_COMPRA (fondo oscuro)
   const regexResumen = /RESUMEN_COMPRA\n([\s\S]*?)FIN_RESUMEN/g;
   let matchResumen;
