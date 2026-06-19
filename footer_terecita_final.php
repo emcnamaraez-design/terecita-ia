@@ -492,7 +492,10 @@ function limpiarConversacion() {
   productosResumen = [];
   localStorage.removeItem('terecita_historial');
   document.getElementById('carmen-mensajes').innerHTML = '';
-  primerMensaje = true;
+  // Se dispara el INICIO aqui mismo, asi que primerMensaje queda en false de
+  // inmediato (no en true) para que toggleChat() no lo vuelva a disparar si
+  // el usuario cierra y reabre el chat antes de que el historial se guarde.
+  primerMensaje = false;
   enviarMensaje('INICIO');
 }
 

@@ -271,12 +271,10 @@ def extraer_carrito_de_imagen(imagen_base64, media_type):
     - lista de dicts [{"nombre", "cantidad", "precio_unitario"}, ...]
     """
     prompt_extraccion = (
-        "Esta imagen es una captura de pantalla del carrito de compras de una tienda WooCommerce. "
-        "Lee cada fila del carrito y devuelve UNICAMENTE un JSON valido (sin texto adicional, "
-        "sin bloque de codigo markdown) con una lista de objetos con las claves "
-        "\"nombre\", \"cantidad\" y \"precio_unitario\" (precio_unitario como numero entero, "
-        "sin signos $ ni puntos de miles). Ejemplo de formato de salida: "
-        "[{\"nombre\": \"Polera Basica\", \"cantidad\": 10, \"precio_unitario\": 9990}]"
+        "Esta es una captura de pantalla del carrito de compras de un sitio WooCommerce. "
+        "Por favor extrae TODOS los productos visibles en formato JSON con campos: nombre, "
+        "cantidad, precio_unitario. Lee cuidadosamente cada fila de la tabla. Ignora subtotales "
+        "y totales, solo productos individuales."
     )
 
     respuesta = client.messages.create(
