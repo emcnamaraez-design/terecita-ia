@@ -9,6 +9,7 @@ import json                                      # Para manejar datos en formato
 import base64                                    # Para adjuntar el PDF en el email de Resend
 import unicodedata                               # Para limpiar nombres de archivo
 import logging                                   # Para que los logs aparezcan en Railway
+import traceback                                 # Para imprimir el traceback completo de errores
 import requests                                  # Para llamar a la API de Resend
 from flask import Flask, request, jsonify        # Framework web
 from flask_cors import CORS                      # Permite conexión desde WordPress
@@ -44,10 +45,22 @@ RESEND_API_URL = "https://api.resend.com/emails"
 # que las respuestas lleguen al correo real de la empresa.
 RESEND_FROM = "Terecita IA · McNamara SPA <onboarding@resend.dev>"
 
+# Diagnostico de arranque: confirmar si RESEND_API_KEY se leyo del entorno,
+# sin imprimir la clave completa (solo si existe y cuantos caracteres tiene).
+if RESEND_API_KEY:
+    print(f"[DIAGNOSTICO] RESEND_API_KEY cargada correctamente desde el entorno "
+          f"({len(RESEND_API_KEY)} caracteres, empieza con {RESEND_API_KEY[:4]!r}...)", flush=True)
+else:
+    print("[DIAGNOSTICO] RESEND_API_KEY NO esta definida en las variables de entorno", flush=True)
+
 
 def enviar_email_resend(to, subject, html, attachments=None, reply_to=None, cc=None):
     """Envia un email usando la API REST de Resend (sin SDK, via requests.post)."""
+    print(f"[DIAGNOSTICO] enviar_email_resend: destinatario={to!r} cc={cc!r} "
+          f"subject={subject!r}", flush=True)
+
     if not RESEND_API_KEY:
+        print("[DIAGNOSTICO] enviar_email_resend: RESEND_API_KEY no esta configurada, abortando envio", flush=True)
         raise RuntimeError("RESEND_API_KEY no esta configurada en las variables de entorno")
 
     payload = {
@@ -63,15 +76,24 @@ def enviar_email_resend(to, subject, html, attachments=None, reply_to=None, cc=N
     if attachments:
         payload["attachments"] = attachments
 
-    respuesta = requests.post(
-        RESEND_API_URL,
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=20,
-    )
+    try:
+        respuesta = requests.post(
+            RESEND_API_URL,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=20,
+        )
+    except Exception:
+        print("[DIAGNOSTICO] enviar_email_resend: excepcion al llamar a la API de Resend:", flush=True)
+        print(traceback.format_exc(), flush=True)
+        raise
+
+    print(f"[DIAGNOSTICO] enviar_email_resend: Resend respondio status={respuesta.status_code} "
+          f"body={respuesta.text}", flush=True)
+
     if not respuesta.ok:
         raise RuntimeError(f"Resend {respuesta.status_code}: {respuesta.text}")
     return respuesta.json()
@@ -264,6 +286,7 @@ def enviar_cotizacion():
     except Exception as e:
         logger.exception("enviar-cotizacion: fallo al generar/enviar la cotizacion")
         print(f"[DIAGNOSTICO] /enviar-cotizacion: ERROR {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         with open(LOG_EMAIL, 'a', encoding='utf-8') as log:
             log.write(f"ERROR | {str(e)}\n")
         return jsonify({'ok': False, 'error': str(e)}), 500
