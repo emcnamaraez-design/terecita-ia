@@ -304,9 +304,9 @@ def test_email():
     """Envía un email de prueba para verificar que Resend funciona"""
     try:
         enviar_email_resend(
-            to=EMAIL_DESTINO,
-            subject="Test Terecita IA - Email funcionando",
-            html="<p>Este es un email de prueba de Terecita IA enviado via Resend ✅</p>",
+            to="emcnamaraez@gmail.com",
+            subject="Test Terecita",
+            html="<p>Email de prueba funcionando</p>",
             reply_to=EMAIL_DESTINO,
         )
         return jsonify({'ok': True, 'mensaje': 'Email de prueba enviado correctamente via Resend'})
