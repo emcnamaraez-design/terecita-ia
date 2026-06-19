@@ -348,7 +348,7 @@ function procesarArchivoImagen(archivo) {
   const lector = new FileReader();
   lector.onload = () => {
     const nombre = archivo.name || 'imagen-pegada.png';
-    imagenAdjunta = { dataUrl: lector.result, nombre };
+    imagenAdjunta = { dataUrl: lector.result, nombre, tipo: archivo.type };
     console.log('[Terecita] Imagen lista para enviar:', nombre, archivo.type, archivo.size + ' bytes');
 
     // Vista previa junto al input (nombre del archivo + miniatura chica)
@@ -499,10 +499,15 @@ function limpiarConversacion() {
 // ── Enviar mensaje ────────────────────────────────────────────────────────
 async function enviarMensaje(textoForzado) {
   const input = document.getElementById('carmen-input');
-  const texto = textoForzado || input.value.trim();
-  if (!texto) return;
+  let texto = textoForzado || input.value.trim();
 
   const imagenParaEnviar = imagenAdjunta;
+
+  // Si hay imagen adjunta pero no se escribio texto, usar "COTIZACION INTERNA:" por defecto
+  if (!texto && imagenParaEnviar) {
+    texto = 'COTIZACION INTERNA:';
+  }
+  if (!texto) return;
 
   // Limpiar el input
   if (!textoForzado) {
@@ -515,11 +520,24 @@ async function enviarMensaje(textoForzado) {
   mostrarTyping();
 
   try {
-    const cuerpo = { mensaje: texto, historial: historial };
+    // Separa el base64 puro y el mime type de la imagen (si hay) para mandarlos
+    // como campos independientes, igual que espera /chat en app.py
+    let imagenBase64 = '';
+    let imagenTipo = '';
     if (imagenParaEnviar && imagenParaEnviar.dataUrl) {
-      cuerpo.imagen = imagenParaEnviar.dataUrl;
-      console.log('[Terecita] Enviando mensaje con imagen adjunta:', imagenParaEnviar.nombre);
+      const partes = imagenParaEnviar.dataUrl.split(';base64,');
+      imagenBase64 = partes[1] || '';
+      imagenTipo = imagenParaEnviar.tipo || (partes[0] || '').replace('data:', '') || 'image/jpeg';
     }
+
+    console.log('Enviando - texto:', texto, 'imagen presente:', !!imagenBase64, 'tamaño:', imagenBase64 ? imagenBase64.length : 0);
+
+    const cuerpo = {
+      mensaje: texto,
+      historial: historial,
+      imagen: imagenBase64,
+      imagen_tipo: imagenTipo
+    };
 
     // Llamar al agente
     const respuesta = await fetch(CARMEN_URL, {
